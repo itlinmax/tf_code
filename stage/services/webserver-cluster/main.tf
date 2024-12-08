@@ -22,12 +22,11 @@ resource "aws_launch_template" "example" {
     image_id = "ami-02d9d83052ced9fdd"
     instance_type = "t4g.nano"
     vpc_security_group_ids = [aws_security_group.instance.id]
-    user_data = base64encode(
-        <<-EOF
-        #!/bin/bash
-        echo "Hello, World" > index.html
-        nohup busybox httpd -f -p ${var.server_port} &
-        EOF
+    user_data = base64encode(templatefile("./user-data.sh", {
+        server_port = var.server_port
+        db_address = data.terraform_remote_state.db.outputs.address
+        db_port = data.terraform_remote_state.db.outputs.port
+        })
     )
     lifecycle {
         create_before_destroy = true
@@ -84,11 +83,11 @@ data "aws_subnets" "default" {
     values = [data.aws_vpc.default.id]
     }
 }
-
-variable "server_port" {
-    description = "The port the server will use for HTTP requests"
-    type = number
-    default = 8080
+data "terraform_remote_state" "db" {
+    backend = "local"
+    config = {
+        path = "../../data-stores/mysql/terraform.tfstate"
+    }
 }
 
 resource "aws_lb" "example" {
@@ -138,13 +137,4 @@ action {
     type = "forward"
     target_group_arn = aws_lb_target_group.asg.arn
     }
-}
-
-#output "public_ip" {
-#    value = aws_instance.example.public_ip
-#    description = "The public IP address of the web server"
-#}
-output "alb_dns_name" {
-    value = aws_lb.example.dns_name
-    description = "The domain name of the load balancer"
 }
